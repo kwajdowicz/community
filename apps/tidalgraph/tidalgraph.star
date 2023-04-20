@@ -23,7 +23,15 @@ TIMEZONE_MAP = {
 
 def main(config):
     station_id = config.get("stationid") or config.get("station")
-    station_timezone = get_station_timezone(station_id)
+    station_data = get_station_timezone(station_id)
+    station_timezone = station_data["timezone"]
+    station_lat = station_data["lat"]
+    station_lng = station_data["lng"]
+
+    sun_data = get_sunrise_sunset_times(station_lat, station_lng)
+    sunrise = calculate_hours(sun_data["sunrise"])
+    sunset = calculate_hours(sun_data["sunset"])
+
 
     if station_timezone == None:
         return station_not_found(station_id)
@@ -79,6 +87,26 @@ def main(config):
                                     x_lim = (0, 24),
                                     y_lim = (min - 1, max + 1),
                                     fill = True,
+                                ),
+                                render.Plot(
+                                    data = [(sunrise, get_value_from_time(points, sunrise)), (sunrise, max+1)],
+                                    width = 64,
+                                    height = 22,
+                                    color = "#EECB03",
+                                    color_inverted = "#EECB03",
+                                    x_lim = (0, 24),
+                                    y_lim = (min - 1, max + 1),
+                                    fill = False,
+                                ),
+                                render.Plot(
+                                    data = [(sunset, min-1), (sunset, get_value_from_time(points, sunset))],
+                                    width = 64,
+                                    height = 22,
+                                    color = "#EECB03",
+                                    color_inverted = "#EECB03",
+                                    x_lim = (0, 24),
+                                    y_lim = (min - 1, max + 1),
+                                    fill = False,
                                 ),
                                 render.Plot(
                                     data = [(calculated_hours, min), (calculated_hours, max)],
@@ -275,24 +303,62 @@ def calculate_hours(timestamp):
 
 def get_station_timezone(id):
     url = "https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations/%s.json" % id
-    zone = cache.get(id)
-    if zone != None:
+    data = cache.get(id)
+    if data != None:
         print("Hit! Displaying cached data.")
-        return zone
+        data = json.decode(data)["stations"][0]
+        return {"timezone": TIMEZONE_MAP[data["timezone"]], "lat": data["lat"], "lng": data["lng"]}
     else:
         print("Miss! Calling station API: %s" % url)
         response = http.get(url)
         if response.status_code != 200:
             print("station request failed with status %d" % response.status_code)
             return None
-        zone = response.json()["stations"][0]["timezone"]
-        if zone in TIMEZONE_MAP:
-            tz = TIMEZONE_MAP[zone]
-            cache.set(id, str(tz), ttl_seconds = 86400)
-            return tz
+        data = response.json()["stations"][0]
+        timezone = data["timezone"]
+        lat = data["lat"]
+        lng = data["lng"]
+        if timezone in TIMEZONE_MAP:
+            tz = TIMEZONE_MAP[timezone]
+            cache.set(id, response.body(), ttl_seconds = 86400)
+            return {"timezone": tz, "lat": lat, "lng": lng }
         else:
-            cache.set(id, str("unsupported_timezone:%s" % zone), ttl_seconds = 86400)
-            return "unsupported_timezone:%s" % zone
+            cache.set(id, str("unsupported_timezone:%s" % timezone), ttl_seconds = 86400)
+            return "unsupported_timezone:%s" % timezone
+
+def get_sunrise_sunset_times(lat, lng):
+    url = "https://api.sunrisesunset.io/json?lat=%s&lng=%s&formatted=0" % (lat, lng)
+    data = cache.get("%s:%s" % (lat, lng))
+    if data != None:
+        print("Hit! Displaying cached data.")
+        data = json.decode(data)
+        return {"sunrise": clean_sun_data(data["sunrise"]), "sunset": clean_sun_data(data["sunset"])}
+    else:
+        print("Miss! Calling station API: %s" % url)
+        response = http.get(url)
+        if response.status_code != 200:
+            print("station request failed with status %d" % response.status_code)
+            return None
+        cache.set("%s:%s" % (lat, lng), str(response.json()["results"]), ttl_seconds = 86400)
+        sunrise = clean_sun_data(response.json()["results"]["sunrise"])
+        sunset = clean_sun_data(response.json()["results"]["sunset"])
+        return {"sunrise": sunrise, "sunset": sunset}
+
+def clean_sun_data(timestamp):
+    t = timestamp.split(":")
+    if timestamp.endswith("PM"):
+        return time.time(hour=int(t[0]) + 12, minute=int(t[1])).format("15:04")
+    else:
+        return time.time(hour=int(t[0]) + 12, minute=int(t[1])).format("03:04")
+
+
+def get_value_from_time(points, time):
+    value = -100
+    for point in points:
+        if point[0] <= time:
+            value = point[1]
+
+    return value
 
 def station_not_found(stationId):
     return render.Root(
