@@ -8,6 +8,7 @@ Author: k.wajdowicz
 load("cache.star", "cache")
 load("encoding/json.star", "json")
 load("http.star", "http")
+load("math.star", "math")
 load("render.star", "render")
 load("schema.star", "schema")
 load("time.star", "time")
@@ -23,15 +24,11 @@ TIMEZONE_MAP = {
 
 def main(config):
     station_id = config.get("stationid") or config.get("station")
-    station_data = get_station_timezone(station_id)
+    render_sun = config.bool("sun" or False)
+    station_data = get_station_data(station_id)
     station_timezone = station_data["timezone"]
     station_lat = station_data["lat"]
     station_lng = station_data["lng"]
-
-    sun_data = get_sunrise_sunset_times(station_lat, station_lng)
-    sunrise = calculate_hours(sun_data["sunrise"])
-    sunset = calculate_hours(sun_data["sunset"])
-
 
     if station_timezone == None:
         return station_not_found(station_id)
@@ -47,8 +44,41 @@ def main(config):
 
     data = get_data_points(todays_data)
     points = data["points"]
-    min = data["min_val"]
-    max = data["max_val"]
+    min = math.floor(data["min_val"])
+    max = math.ceil(data["max_val"])
+    range = ((max - min) / 22) * 3
+    plot_min = min - range
+    plot_max = max + range
+
+    if render_sun:
+        sun_data = get_sunrise_sunset_times(station_lat, station_lng)
+        sunrise = calculate_hours(sun_data["sunrise"])
+        sunset = calculate_hours(sun_data["sunset"])
+
+        sunrise_sunset_plots = {
+            "sunrise": render.Plot(
+                data = [(sunrise, get_value_from_time(points, sunrise)), (sunrise, max)],
+                width = 64,
+                height = 22,
+                color = "#EECB03",
+                color_inverted = "#EECB03",
+                x_lim = (0, 24),
+                y_lim = (plot_min, plot_max),
+                fill = False,
+            ),
+            "sunset": render.Plot(
+                data = [(sunset, min), (sunset, get_value_from_time(points, sunset))],
+                width = 64,
+                height = 22,
+                color = "#EECB03",
+                color_inverted = "#EECB03",
+                x_lim = (0, 24),
+                y_lim = (plot_min, plot_max),
+                fill = False,
+            ),
+        }
+    else:
+        sunrise_sunset_plots = {"sunrise": None, "sunset": None}
 
     return render.Root(
         delay = 100,
@@ -85,29 +115,11 @@ def main(config):
                                     color_inverted = "#800080",
                                     fill_color_inverted = "#550A35",
                                     x_lim = (0, 24),
-                                    y_lim = (min - 1, max + 1),
+                                    y_lim = (plot_min, plot_max),
                                     fill = True,
                                 ),
-                                render.Plot(
-                                    data = [(sunrise, get_value_from_time(points, sunrise)), (sunrise, max+1)],
-                                    width = 64,
-                                    height = 22,
-                                    color = "#EECB03",
-                                    color_inverted = "#EECB03",
-                                    x_lim = (0, 24),
-                                    y_lim = (min - 1, max + 1),
-                                    fill = False,
-                                ),
-                                render.Plot(
-                                    data = [(sunset, min-1), (sunset, get_value_from_time(points, sunset))],
-                                    width = 64,
-                                    height = 22,
-                                    color = "#EECB03",
-                                    color_inverted = "#EECB03",
-                                    x_lim = (0, 24),
-                                    y_lim = (min - 1, max + 1),
-                                    fill = False,
-                                ),
+                                sunrise_sunset_plots["sunrise"],
+                                sunrise_sunset_plots["sunset"],
                                 render.Plot(
                                     data = [(calculated_hours, min), (calculated_hours, max)],
                                     width = 64,
@@ -115,8 +127,8 @@ def main(config):
                                     color = "#626567",
                                     color_inverted = "#626567",
                                     x_lim = (0, 24),
-                                    y_lim = (min - 1, max + 1),
-                                    fill = True,
+                                    y_lim = (plot_min, plot_max),
+                                    fill = False,
                                 ),
                             ],
                         ),
@@ -242,6 +254,13 @@ def get_schema():
                 desc = "NOAA Station ID",
                 icon = "water",
             ),
+            schema.Toggle(
+                id = "sun",
+                name = "Show Sunrise/Sunset",
+                desc = "Toggle for sunrise/sunset lines on plot",
+                icon = "sun",
+                default = True,
+            ),
         ],
     )
 
@@ -251,7 +270,7 @@ def get_tide_data(stationId, date, interval):
     data = cache.get("%s-%s" % (stationId, date))
     if data != None:
         data = json.decode(data)
-        print("Hit! Displaying cached data.")
+        print("Hit! Displaying cached tide data.")
     else:
         print("Miss! Calling tide API: %s" % url)
         response = http.get(url)
@@ -268,8 +287,8 @@ def get_date(current_offset_time):
 
 def get_data_points(today):
     data_points = []
-    max = 0
-    min = 0
+    max = -100
+    min = 100
 
     for p in today["predictions"]:
         time = p["t"][11:].split(":")
@@ -301,11 +320,11 @@ def calculate_hours(timestamp):
     time = timestamp.split(":")
     return int(time[0]) + (int(time[1]) / 60)
 
-def get_station_timezone(id):
+def get_station_data(id):
     url = "https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations/%s.json" % id
     data = cache.get(id)
     if data != None:
-        print("Hit! Displaying cached data.")
+        print("Hit! Displaying cached station data.")
         data = json.decode(data)["stations"][0]
         return {"timezone": TIMEZONE_MAP[data["timezone"]], "lat": data["lat"], "lng": data["lng"]}
     else:
@@ -321,16 +340,16 @@ def get_station_timezone(id):
         if timezone in TIMEZONE_MAP:
             tz = TIMEZONE_MAP[timezone]
             cache.set(id, response.body(), ttl_seconds = 86400)
-            return {"timezone": tz, "lat": lat, "lng": lng }
+            return {"timezone": tz, "lat": lat, "lng": lng}
         else:
             cache.set(id, str("unsupported_timezone:%s" % timezone), ttl_seconds = 86400)
             return "unsupported_timezone:%s" % timezone
 
 def get_sunrise_sunset_times(lat, lng):
-    url = "https://api.sunrisesunset.io/json?lat=%s&lng=%s&formatted=0" % (lat, lng)
+    url = "https://api.sunrisesunset.io/json?lat=%s&lng=%s" % (lat, lng)
     data = cache.get("%s:%s" % (lat, lng))
     if data != None:
-        print("Hit! Displaying cached data.")
+        print("Hit! Displaying cached sun data.")
         data = json.decode(data)
         return {"sunrise": clean_sun_data(data["sunrise"]), "sunset": clean_sun_data(data["sunset"])}
     else:
@@ -339,7 +358,7 @@ def get_sunrise_sunset_times(lat, lng):
         if response.status_code != 200:
             print("station request failed with status %d" % response.status_code)
             return None
-        cache.set("%s:%s" % (lat, lng), str(response.json()["results"]), ttl_seconds = 86400)
+        cache.set("%s:%s" % (lat, lng), json.encode(response.json()["results"]), ttl_seconds = 86400)
         sunrise = clean_sun_data(response.json()["results"]["sunrise"])
         sunset = clean_sun_data(response.json()["results"]["sunset"])
         return {"sunrise": sunrise, "sunset": sunset}
@@ -347,10 +366,9 @@ def get_sunrise_sunset_times(lat, lng):
 def clean_sun_data(timestamp):
     t = timestamp.split(":")
     if timestamp.endswith("PM"):
-        return time.time(hour=int(t[0]) + 12, minute=int(t[1])).format("15:04")
+        return time.time(hour = int(t[0]) + 12, minute = int(t[1])).format("15:04")
     else:
-        return time.time(hour=int(t[0]) + 12, minute=int(t[1])).format("03:04")
-
+        return time.time(hour = int(t[0]), minute = int(t[1])).format("03:04")
 
 def get_value_from_time(points, time):
     value = -100
