@@ -46,39 +46,40 @@ def main(config):
     points = data["points"]
     min = math.floor(data["min_val"])
     max = math.ceil(data["max_val"])
-    range = ((max - min) / 22) * 3
+    range = ((data["max_val"] - data["min_val"]) / 22) * 3
     plot_min = min - range
     plot_max = max + range
 
+    sunrise_sunset_plots = {"sunrise": None, "sunset": None}
     if render_sun:
         sun_data = get_sunrise_sunset_times(station_lat, station_lng)
-        sunrise = calculate_hours(sun_data["sunrise"])
-        sunset = calculate_hours(sun_data["sunset"])
 
-        sunrise_sunset_plots = {
-            "sunrise": render.Plot(
-                data = [(sunrise, get_value_from_time(points, sunrise)), (sunrise, max)],
-                width = 64,
-                height = 22,
-                color = "#EECB03",
-                color_inverted = "#EECB03",
-                x_lim = (0, 24),
-                y_lim = (plot_min, plot_max),
-                fill = False,
-            ),
-            "sunset": render.Plot(
-                data = [(sunset, min), (sunset, get_value_from_time(points, sunset))],
-                width = 64,
-                height = 22,
-                color = "#EECB03",
-                color_inverted = "#EECB03",
-                x_lim = (0, 24),
-                y_lim = (plot_min, plot_max),
-                fill = False,
-            ),
-        }
-    else:
-        sunrise_sunset_plots = {"sunrise": None, "sunset": None}
+        if sun_data != None:
+            sunrise = calculate_hours(sun_data["sunrise"])
+            sunset = calculate_hours(sun_data["sunset"])
+
+            sunrise_sunset_plots = {
+                "sunrise": render.Plot(
+                    data = [(sunrise, get_value_from_time(points, sunrise)), (sunrise, max)],
+                    width = 64,
+                    height = 22,
+                    color = "#EECB03",
+                    color_inverted = "#EECB03",
+                    x_lim = (0, 24),
+                    y_lim = (plot_min, plot_max),
+                    fill = False,
+                ),
+                "sunset": render.Plot(
+                    data = [(sunset, min), (sunset, get_value_from_time(points, sunset))],
+                    width = 64,
+                    height = 22,
+                    color = "#EECB03",
+                    color_inverted = "#EECB03",
+                    x_lim = (0, 24),
+                    y_lim = (plot_min, plot_max),
+                    fill = False,
+                ),
+            }
 
     return render.Root(
         delay = 100,
