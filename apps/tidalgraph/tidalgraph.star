@@ -26,14 +26,15 @@ def main(config):
     station_id = config.get("stationid") or config.get("station")
     render_sun = config.bool("sun" or False)
     station_data = get_station_data(station_id)
+
+    if station_data == None:
+        return station_not_found(station_id)
+    if str(station_data).startswith("unsupported_timezone:"):
+        return unsupported_timezone(station_id, station_data.split(":")[1])
+
     station_timezone = station_data["timezone"]
     station_lat = station_data["lat"]
     station_lng = station_data["lng"]
-
-    if station_timezone == None:
-        return station_not_found(station_id)
-    if station_timezone.startswith("unsupported_timezone:"):
-        return unsupported_timezone(station_id, station_timezone.split(":")[1])
 
     current_time = time.now().in_location(station_timezone)
     calculated_hours = calculate_hours(current_time.format("15:04"))
