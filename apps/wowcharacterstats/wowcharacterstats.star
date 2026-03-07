@@ -399,7 +399,7 @@ def get_raid_progress(progress):
                                 total += mode["progress"]["total_count"]
 
     if difficulty != "":
-        status =  "%d/%d %s" % (completed, total, difficulty[:1])
+        status = "%d/%d %s" % (completed, total, difficulty[:1])
         print(status)
         return render.Text(
             content = status,
