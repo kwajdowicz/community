@@ -75,9 +75,6 @@ DEFAULT_REALM = "firetree"
 DEFAULT_REGION = "us"
 DEFAULT_AUTH_TTL = 86399
 
-CURRENT_EXPANSION = "Midnight"
-CURRENT_INSTANCES = ["The Dreamrift", "The Voidpsire", "March on Quel'Danas"]
-
 def main(config):
     client_id = secret.decrypt(
         "AV6+xWcEK3ttMwoBOdFBvpJ6mhRkE1fvDYW+JYmxMY1sTmyaTz1RuNYFkZN9IsfvyolFeknXQLmYkZOuSfCtLII7XHU7tSmT8pVrmS9Am025jZ4QUs25fSLknwMqwAecue4iBMUubsI4CbYrNVDJFrSABxXJljtSueQxsM+/QMtNO3pumZg=",
@@ -382,21 +379,19 @@ def get_raid_progress(progress):
 
     if "expansions" in progress:
         for expansion in progress["expansions"]:
-            if expansion["expansion"]["name"] == CURRENT_EXPANSION:
+            if expansion["expansion"]["name"] == "Current Season":
                 for instance in expansion["instances"]:
-                    if instance["instance"]["name"] in CURRENT_INSTANCES:
-                        if instance["modes"]:
-                            mode = instance["modes"][-1]
-                            if RAID_LEVELS[mode["difficulty"]["name"]] > raid_level:
-                                raid_level = RAID_LEVELS[mode["difficulty"]["name"]]
-                                completed = mode["progress"]["completed_count"]
-                                total += mode["progress"]["total_count"]
-                                difficulty = mode["difficulty"]["name"]
-                            elif RAID_LEVELS[mode["difficulty"]["name"]] == raid_level:
-                                completed += mode["progress"]["completed_count"]
-                                total += mode["progress"]["total_count"]
-                            else:
-                                total += mode["progress"]["total_count"]
+                    if instance["modes"]:
+                        mode = instance["modes"][-1]
+                        total += mode["progress"]["total_count"]
+                        current_difficulty_level = RAID_LEVELS[mode["difficulty"]["name"]]
+
+                        if current_difficulty_level > raid_level:
+                            raid_level = current_difficulty_level
+                            difficulty = mode["difficulty"]["name"]
+                            completed = mode["progress"]["completed_count"]
+                        elif current_difficulty_level == raid_level:
+                            completed += mode["progress"]["completed_count"]
 
     if difficulty != "":
         status = "%d/%d %s" % (completed, total, difficulty[:1])
